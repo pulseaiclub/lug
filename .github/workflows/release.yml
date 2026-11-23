@@ -44,7 +44,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' \
             -o "dist/lug-$GOOS-$GOARCH${{ matrix.ext }}" ./cmd/lug
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lug-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
