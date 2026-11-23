@@ -1,6 +1,7 @@
 package lug_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pulseaiclub/lug"
@@ -235,5 +236,82 @@ func TestUserdataMethodCall(t *testing.T) {
 	}
 	if p.HP != 50 {
 		t.Fatalf("the Go object was not mutated: HP = %v", p.HP)
+	}
+}
+
+// TestBindSlices covers the table-to-slice conversion: a bound Go function can
+// take a []float64 or []string instead of making the caller unpack a *Table.
+func TestBindSlices(t *testing.T) {
+	env := lug.New()
+	lug.Bind(env, "sum", func(xs []float64) float64 {
+		total := 0.0
+		for _, x := range xs {
+			total += x
+		}
+		return total
+	})
+	lug.Bind(env, "join", func(xs []string, sep string) string {
+		return strings.Join(xs, sep)
+	})
+	lug.Bind(env, "firstTwo", func(xs [2]float64) float64 { return xs[0] + xs[1] })
+	lug.Bind(env, "grid", func(rows [][]float64) float64 { return float64(len(rows)) })
+
+	rets, err := lug.DoString(env, `
+		return sum({1, 2, 3.5}),
+		       join({"a", "b", "c"}, "-"),
+		       firstTwo({7, 8}),
+		       grid({{1, 2}, {3, 4}}),
+		       sum({})
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := lug.Get[float64](rets, 0); got != 6.5 {
+		t.Fatalf("sum = %v, want 6.5", got)
+	}
+	if got := lug.Get[string](rets, 1); got != "a-b-c" {
+		t.Fatalf("join = %q", got)
+	}
+	if got := lug.Get[float64](rets, 2); got != 15 {
+		t.Fatalf("firstTwo = %v, want 15", got)
+	}
+	if got := lug.Get[float64](rets, 3); got != 2 {
+		t.Fatalf("grid = %v, want 2", got)
+	}
+	if got := lug.Get[float64](rets, 4); got != 0 {
+		t.Fatalf("sum({}) = %v, want 0", got)
+	}
+
+	// A fixed-size array of the wrong length, and a table where a slice is
+	// expected but the elements do not convert, are Lua errors.
+	if _, err := lug.DoString(env, `return firstTwo({1, 2, 3})`); err == nil {
+		t.Fatal("expected an error for a 3-item table passed to a [2]float64")
+	}
+	if _, err := lug.DoString(env, `return sum({"x"})`); err == nil {
+		t.Fatal("expected an error for a non-numeric element")
+	}
+}
+
+// TestBindMaps covers the table-to-map conversion, the other half of passing a
+// Lua options table to a Go function.
+func TestBindMaps(t *testing.T) {
+	env := lug.New()
+	lug.Bind(env, "scale", func(opts map[string]float64, x float64) float64 {
+		return x*opts["factor"] + opts["offset"]
+	})
+	lug.Bind(env, "count", func(m map[string]float64) float64 { return float64(len(m)) })
+
+	rets, err := lug.DoString(env, `return scale({factor = 2, offset = 1}, 10), count({a = 1, b = 2})`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := lug.Get[float64](rets, 0); got != 21 {
+		t.Fatalf("scale = %v, want 21", got)
+	}
+	if got := lug.Get[float64](rets, 1); got != 2 {
+		t.Fatalf("count = %v, want 2", got)
+	}
+	if _, err := lug.DoString(env, `return count({a = "text"})`); err == nil {
+		t.Fatal("expected an error for a non-numeric map value")
 	}
 }

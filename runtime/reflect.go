@@ -92,7 +92,9 @@ func WrapValue(v any) Value {
 // WrapFunc wraps a Go function into a Lua closure via reflection.
 //
 // Accepted parameter types: Value, float64, float32, int, int64, string,
-// bool, *Table, interface{} (unwraps userdata), plus a variadic tail.
+// bool, *Table, slices and arrays of those (converted from a table's array
+// part), maps (converted from a table's key/value pairs), interface{} (unwraps
+// userdata), plus a variadic tail.
 // Return values become Lua values; a final error return raises a Lua error.
 func WrapFunc(fn any) Value {
 	rv := reflect.ValueOf(fn)
@@ -168,6 +170,33 @@ func toGo(v Value, t reflect.Type, argIdx int) reflect.Value {
 	case reflect.Interface:
 		if t.NumMethod() == 0 { // any: unwrap
 			return reflect.ValueOf(goAny(v))
+		}
+	case reflect.Slice, reflect.Array:
+		if v.kind == KindTable {
+			tbl := v.ptr.(*Table)
+			n := tbl.Len()
+			var out reflect.Value
+			if t.Kind() == reflect.Array {
+				if n != t.Len() {
+					Errorf("bad argument #%d (%s wants %d items, got %d)", argIdx+1, t.String(), t.Len(), n)
+				}
+				out = reflect.New(t).Elem()
+			} else {
+				out = reflect.MakeSlice(t, n, n)
+			}
+			for i := 0; i < n; i++ {
+				out.Index(i).Set(toGo(tbl.Get(Number(float64(i+1))), t.Elem(), argIdx))
+			}
+			return out
+		}
+	case reflect.Map:
+		if v.kind == KindTable {
+			tbl := v.ptr.(*Table)
+			out := reflect.MakeMap(t)
+			for k, val, ok := tbl.Next(Nil); ok; k, val, ok = tbl.Next(k) {
+				out.SetMapIndex(toGo(k, t.Key(), argIdx), toGo(val, t.Elem(), argIdx))
+			}
+			return out
 		}
 	case reflect.Ptr, reflect.Struct:
 		if v.kind == KindUserdata {
