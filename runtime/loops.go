@@ -33,7 +33,7 @@ func NewNumFor(init, limit, step Value) *NumFor {
 // Next advances the loop and returns the current value, or ok=false when
 // the loop is finished.
 // NextNum is Next for loops whose control variable is statically known to
-// be a number (the common case in transpiled numeric for loops).
+// be a number (the common case in numeric for loops).
 func (n *NumFor) NextNum() (float64, bool) {
 	if n.step > 0 {
 		if !(n.i <= n.limit) {

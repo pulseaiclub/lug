@@ -1,20 +1,22 @@
-// Package interp runs Lua scripts at run time by walking the AST.
+// Package interp runs Lua scripts by walking the AST. It is the only execution
+// path in lug: a compiled script is an ordinary lg.Fn, so it takes (env, args)
+// and returns values, which makes interpreted functions interchangeable with Go
+// functions, pcall, coroutines, metatables, Bind and Expose.
 //
-// The transpiler in internal/codegen turns Lua into Go at build time, which is
-// the fast path. This package covers the other half: a host program that wants
-// to load a script from disk or a string while it runs. Interpreted code and
-// transpiled code are interchangeable, because a compiled script is an
-// ordinary lg.Fn: it takes (env, args) and returns values, so pcall,
-// coroutines, metatables, Bind and Expose all apply to both.
+// Cost, measured on an Apple M3 against gopher-lua's bytecode VM: fib(24) takes
+// 32ms here versus 8.5ms, and a 100k numeric loop 4.5ms versus 8.6ms. The tree
+// walker dispatches every node through an interface type switch and boxes every
+// value in 48 bytes, which is why calls cost more than a VM's register moves;
+// in exchange there is nothing to generate, load or cache, and scripts can be
+// read from disk, a string or the network while the program runs.
 //
-// The cost is speed. Measured on this machine: fib(24) takes 34ms interpreted
-// versus 0.14ms transpiled, a 100k numeric loop 14ms versus 0.08ms. Two orders
-// of magnitude, because the tree walker dispatches every node through an
-// interface type switch, boxes every value in 48 bytes, and allocates a scope
-// plus an argument slice per call — none of which the Go compiler can undo.
-// For reference, gopher-lua's bytecode VM needs 8.5ms for the same fib(24), so
-// this interpreter is ~4x slower than a dedicated VM and ~250x slower than the
-// transpiler. Use it for the scripting layer, keep hot paths transpiled.
+// Two things dominate the design because they were measured, not guessed:
+// scopes preallocate their bindings (capacity computed at parse time) and are
+// reused across loop iterations unless the body contains a function literal,
+// and statement-level shapes like `local x = e` and `x = e` skip the temporary
+// slices that a uniform "list of expressions" path would allocate.
+package interp
+
 package interp
 
 import (

@@ -1,5 +1,5 @@
 // Package ast defines the Lua abstract syntax tree produced by the parser
-// and consumed by the transpiler.
+// and consumed by the interpreter.
 //
 // The tree keeps Lua surface syntax (method calls, property access, multiple
 // assignment); the code generator performs the desugaring, where it has

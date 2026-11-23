@@ -22,8 +22,11 @@ separators. -->
 
 ### Steps to reproduce
 
-```sh
-lug repro.lua
+<!-- A Go test or a few lines of Go that call lug is ideal; the script alone is
+fine too if the behaviour does not depend on the host. -->
+
+```go
+rets, err := lug.DoString(lug.New(), `return 1`)
 ```
 
 ### Environment
@@ -31,8 +34,8 @@ lug repro.lua
 - lug version or commit:
 - Go version (`go version`):
 - OS and architecture:
-- How the script is loaded: `lug script.lua` / `lug -e` / `lug.DoString` /
-  `lug.DoFile` / `lug.CompileFile` / `load` inside Lua / sandbox
+- How the script is loaded: `lug.DoString` / `lug.DoFile` / `lug.CompileFile` +
+  `Script.Run` / `load` inside Lua / inside a sandbox
 
 ### Anything else
 

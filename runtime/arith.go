@@ -95,7 +95,7 @@ func modf(x, y float64) Value  { return Number(x - math.Floor(x/y)*y) }
 func powf(x, y float64) Value  { return Number(math.Pow(x, y)) }
 func idivf(x, y float64) Value { return Number(math.Floor(x / y)) }
 
-// Float helpers used by the transpiled fast paths, where both operands are
+// Float helpers for the arithmetic fast path, where both operands are
 // known to be numbers at compile time.
 func ModNum(x, y float64) float64  { return x - math.Floor(x/y)*y }
 func PowNum(x, y float64) float64  { return math.Pow(x, y) }

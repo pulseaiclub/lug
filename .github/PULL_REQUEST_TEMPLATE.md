@@ -10,6 +10,8 @@
 - [ ] `go vet ./...` passes
 - [ ] A test covers the change (a Lua script in `internal/interp/testdata` with
       a `.want` file, or a Go test)
+- [ ] If a public API changed, `example_test.go` still compiles and `go test
+      -run Example .` passes
 - [ ] If this changes performance, the numbers are in the description
       (`go test ./internal/interp -bench . -run xxx`)
 

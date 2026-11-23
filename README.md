@@ -2,9 +2,10 @@
 
 [![ci](https://github.com/pulseaiclub/lug/actions/workflows/ci.yml/badge.svg)](https://github.com/pulseaiclub/lug/actions/workflows/ci.yml)
 
-Lua embedded in Go as a **scripting language**: source is parsed and interpreted
-at run time, so there is no build step, no generated code and no Go toolchain in
-the loop. Drop a `.lua` file next to your binary and run it.
+Lua as a **Go library**. Import it, hand it a script, run it: source is parsed
+and interpreted at run time, so there is no build step, no generated code and no
+Go toolchain in the loop. lug is not a command and ships no binary — the API is
+the product.
 
 - **Lua 5.4 syntax** — closures, metatables, varargs, coroutines, `goto`,
   integer division, bitwise operators, `<const>` attributes.
@@ -28,38 +29,60 @@ if _, err := lug.DoFile(env, "scripts/init.lua"); err != nil {
 
 ```sh
 go get github.com/pulseaiclub/lug
-go install github.com/pulseaiclub/lug/cmd/lug@latest   # the `lug` command
 ```
 
-## CLI
-
-```
-lug [options] script.lua [args...]
-lug -e 'CODE' [args...]
-lug version
+```go
+import "github.com/pulseaiclub/lug"
 ```
 
-The chunk receives the arguments as `...` and through the global `arg` table,
-like the reference interpreter:
+## Quick start
 
-```sh
-$ cat hello.lua
-print("hello", ...)
-print(arg[0], arg[1])
-$ lug hello.lua world extra
-hello	world	extra
-hello.lua	world
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/pulseaiclub/lug"
+)
+
+func main() {
+	env := lug.New()                                  // globals + standard library
+
+	lug.Bind(env, "damage", func(n float64) {        // any Go function
+		fmt.Println("taking", n, "damage")
+	})
+	lug.Expose(env, "player", &Player{HP: 100})      // any Go value
+
+	rets, err := lug.DoString(env, `
+		damage(25)
+		player.HP = player.HP - 25
+		return "done", player.HP
+	`)
+	if err != nil {
+		log.Fatal(err) // a syntax error or an uncaught Lua error
+	}
+
+	fmt.Println(lug.Get[string](rets, 0), lug.Get[float64](rets, 1))
+}
 ```
+
+`lug.New()` is one environment. Use a new one per script when scripts must not
+see each other's globals.
 
 ## Embedding API
 
 ```go
 env := lug.New()
 
-// Go function -> Lua function (any signature; see runtime.WrapFunc).
-lug.Bind(env, "damage", func(p *Player, dmg float64) float64 { return p.takeDamage(dmg) })
+// Go function -> Lua function. Any signature; a final error return becomes a Lua
+// error that pcall can catch. Slices, arrays and maps convert from tables.
+lug.Bind(env, "half", func(n float64) (float64, error) { return n / 2, nil })
+lug.Bind(env, "sum", func(xs []float64) float64 { ... })
 
 // Go value -> Lua userdata. Fields use their Go names, methods work with `:`.
+// Changes made in Lua are visible in Go: it is the same object.
 lug.Expose(env, "player", &Player{HP: 100})
 
 // Run code from a string, or from a file.
@@ -67,32 +90,30 @@ rets, err := lug.DoString(env, `return player.HP`)
 rets, err = lug.DoFile(env, "scripts/init.lua")
 ```
 
-Compile once, run often:
+Compile once, run often — from any number of goroutines:
 
 ```go
-s, err := lug.CompileFile("scripts/init.lua")
+s, err := lug.CompileFile("scripts/init.lua") // syntax error at compile time
 if err != nil {
-	return err // syntax error
+	return err
 }
-rets, err := s.Run(env, lug.String("arg")) // runtime error
+rets, err := s.Run(env, lug.String("arg"))    // runtime error
 ```
 
-A compiled script is an ordinary `lug.Fn`, so it can be stored, passed to
-another script, registered in a table, or wrapped in a coroutine.
-
-Calling Lua from Go:
+A compiled script is an ordinary `lug.Fn`, so it can be stored in a table, passed
+to another script, or wrapped in a coroutine. Calling Lua from Go:
 
 ```go
-f := env.Get("answer")                     // a global the script defined
+f := env.Get("answer")                        // a global the script defined
 rets, err := lug.CallErr(env, f, lug.Number(5))
-n := lug.Get[float64](rets, 0)              // panics on a shape mismatch
-n, ok := lug.GetOK[float64](rets, 0)        // tolerant form
 ```
 
 Results are read with generic helpers, so the destination type is written once:
 
 ```go
-hp, err := lug.Run1[float64](env, Chunk_score)   // a chunk that returns one value
+hp, err := lug.Run1[float64](env, Chunk_score)  // a chunk that returns one value
+n := lug.Get[float64](rets, 0)                  // panics on a shape mismatch
+n, ok := lug.GetOK[float64](rets, 0)            // tolerant form
 xs, err := lug.Slice[float64](lug.TableOf([]float64{1, 2}))
 p, ok := lug.Userdata[Player](env.Get("player")) // unwrap Expose'd Go data
 env.Set("count", lug.ValueOf(42))                // Go primitives -> Lua values
@@ -102,6 +123,9 @@ Supported `As[T]` / `Get[T]` types: `Value`, `float64`, `int64`, `int`, `string`
 `bool`, `*Table`. `Bind` and `Expose` stay `any`-typed on purpose: a Lua binding
 may take any number of parameters of any types, and Go's type sets cannot express
 "any function signature".
+
+`example_test.go` holds runnable examples for `Bind`, `Expose`, `Script` and
+`NewSandboxed`; `go test` checks their output, so they cannot drift.
 
 ## Loading scripts from Lua
 
@@ -115,8 +139,8 @@ print(loadfile("scripts/other.lua"))    -- compiles, does not run
 ```
 
 `examples/embed` is a complete plugin host: it walks a directory, gives every
-script its own sandbox, calls `on_load` / `on_tick` / `on_unload` hooks, and
-keeps a broken script from affecting the others.
+script its own sandbox, calls `on_load` / `on_tick` / `on_unload` hooks, and keeps
+a broken script from affecting the others.
 
 ## Sandboxing
 
@@ -130,8 +154,8 @@ env := lug.NewSandboxed("mod-name", lug.SandboxOptions{
 A sandbox starts with no capabilities: no `os`, no `io`, no `load`/`dofile`, no
 `require`/`debug`, no `print` unless asked for, and its own globals table.
 `SandboxOptions{OS: true}` exposes only `os.time`, `os.date`, `os.clock` and
-`os.difftime`; `IO: true` only `io.write`. `os.execute`, `os.remove`,
-`os.getenv` and `os.exit` are never available.
+`os.difftime`; `IO: true` only `io.write`. `os.execute`, `os.remove`, `os.getenv`
+and `os.exit` are never available.
 
 The sandbox restricts capabilities, not resources: a script that loops forever
 cannot be interrupted. Use a separate process for genuinely untrusted code.
@@ -173,7 +197,7 @@ Lua call goes through the `Fn(env, []Value) []Value` ABI and allocates its
 argument and result slices — the price of a uniform ABI that lets Go functions,
 coroutines and `pcall` share one calling convention.
 
-Benchmarks: `go test ./internal/interp -bench . -run xxx`.
+Run them yourself: `go test ./internal/interp -bench . -run xxx`.
 
 ## Layout
 
@@ -181,7 +205,6 @@ Benchmarks: `go test ./internal/interp -bench . -run xxx`.
 lug.go                 public embedding API (Bind, Expose, ValueOf, CallErr, ...)
 script.go              Compile / CompileFile / DoString / DoFile, sandbox setup
 generic.go             As / Get / Run1 / Slice / TableOf / Userdata helpers
-cmd/lug                CLI: run a script, -e CODE
 internal/lexer         Lua 5.4 lexer
 internal/ast           surface AST
 internal/parser        recursive-descent parser with precedence climbing
@@ -190,10 +213,11 @@ runtime/               values, tables, closures, metatables, stdlib, coroutines
 examples/embed         run-time plugin host with per-script sandboxes
 ```
 
-The interpreter and the runtime are separate on purpose: the runtime knows
-nothing about the AST, and the interpreter only uses the exported runtime API. A
-`Script` is just an `Fn`, which is why interpreted functions, Go functions and
-library functions are interchangeable.
+Only the root package, `runtime` and the `examples` are public API; everything
+under `internal/` may change without notice. The interpreter and the runtime are
+separate on purpose: the runtime knows nothing about the AST, and the interpreter
+only uses the exported runtime API. A `Script` is just an `Fn`, which is why
+interpreted functions, Go functions and library functions are interchangeable.
 
 ## Testing
 

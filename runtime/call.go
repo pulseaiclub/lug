@@ -1,6 +1,7 @@
 package runtime
 
-// Fn is the signature of every Lua callable, transpiled or host-provided.
+// Fn is the signature of every Lua callable: interpreted code, library
+// functions and host Go functions all use it.
 // Functions receive the environment and the argument list and return their
 // results as a slice (nil/empty means no values).
 type Fn func(env *Env, args []Value) []Value

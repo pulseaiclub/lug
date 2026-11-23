@@ -7,7 +7,7 @@ import "math"
 // like t.name, integer keys like t[i]) allocation-free and map-overhead low.
 //
 // The hash part keeps insertion order so pairs() iterates deterministically
-// (Lua leaves the order unspecified; being deterministic makes transpiled
+// (Lua leaves the order unspecified; being deterministic makes script
 // programs reproducible and testable).
 type Table struct {
 	arr    []Value // dense array part, index 0 == Lua index 1

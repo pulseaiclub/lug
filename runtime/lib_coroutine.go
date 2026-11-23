@@ -25,7 +25,7 @@ import "sync"
 // previous entry after the body hands control back, so a body always observes
 // itself as current and, once it yields, its resumer observes the caller it
 // had. resume must be called with the same Env the coroutine was created in
-// (transpiled code always is).
+// (interpreted code always is).
 //
 // Goroutine leak. A coroutine that is abandoned while suspended keeps its
 // body goroutine blocked on resumeCh forever: it leaks one goroutine. Lua's

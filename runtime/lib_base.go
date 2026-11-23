@@ -132,7 +132,7 @@ func baseError(env *Env, args []Value) []Value {
 	if v.IsNil() {
 		v = String("error")
 	}
-	// Lua prepends position info when level != 0; transpiled code has no
+	// Lua prepends position info when level != 0; interpreted code has no
 	// Lua line information, so the message is raised as-is.
 	Error(v)
 	return nil

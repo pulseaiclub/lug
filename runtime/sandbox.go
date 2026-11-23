@@ -24,7 +24,7 @@ type SandboxOptions struct {
 // different authors in one process.
 //
 // The sandbox restricts capabilities, not resources: a script that loops
-// forever keeps its goroutine busy, because transpiled loops are ordinary Go
+// forever keeps its goroutine busy, because a loop is ordinary Go
 // loops with nothing to check between iterations, and interpreted loops are Go
 // recursion over the AST. Run untrusted code in a separate process when it must
 // be interruptible.

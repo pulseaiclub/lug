@@ -65,8 +65,8 @@ jobs:
             exit 1
           fi
 
-  cli:
-    name: cli smoke test
+  docs:
+    name: package documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,26 +77,63 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run a chunk from -e
-        run: |
-          out="$(go run ./cmd/lug -e 'print(2^10, ("lug"):upper())')"
-          echo "$out"
-          [ "$out" = "$(printf '1024\tLUG')" ]
+      # The examples in example_test.go are part of the documentation: go test
+      # checks their output, so a stale comment cannot survive.
+      - name: Run the documentation examples
+        run: go test -run Example -v .
 
-      - name: Run a script file with arguments
-        run: |
-          printf 'print("hello", ...)\nprint(arg[0], arg[1])\n' > /tmp/hello.lua
-          out="$(go run ./cmd/lug /tmp/hello.lua world extra)"
-          echo "$out"
-          [ "$out" = "$(printf 'hello\tworld\textra\n/tmp/hello.lua\tworld')" ]
+  dependency:
+    name: use as a dependency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: A syntax error exits non-zero
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Build a throwaway module that imports lug the way a host program does,
+      # so a broken public API cannot slip through.
+      - name: Build an external module against this checkout
         run: |
-          printf 'if true then\n' > /tmp/broken.lua
-          if go run ./cmd/lug /tmp/broken.lua; then
-            echo "expected a non-zero exit"
+          work="$(mktemp -d)"
+          cd "$work"
+          go mod init example.com/host
+          go mod edit -require=github.com/pulseaiclub/lug@v0.0.0
+          go mod edit -replace=github.com/pulseaiclub/lug="$GITHUB_WORKSPACE"
+          cat > main.go <<'GO'
+          package main
+
+          import (
+          	"fmt"
+
+          	"github.com/pulseaiclub/lug"
+          )
+
+          func main() {
+          	env := lug.New()
+          	lug.Bind(env, "half", func(n float64) float64 { return n / 2 })
+
+          	rets, err := lug.DoString(env, "return half(7), type(missing_global)")
+          	if err != nil {
+          		panic(err)
+          	}
+          	fmt.Println(lug.Get[float64](rets, 0))
+          	fmt.Println(lug.Get[string](rets, 1))
+          }
+          GO
+          go mod tidy
+
+          got="$(go run .)"
+          want="$(printf '3.5\nnil')"
+          if [ "$got" != "$want" ]; then
+            echo "unexpected output:"
+            echo "$got"
             exit 1
           fi
+          echo "$got"
 
   examples:
     name: examples

@@ -93,8 +93,8 @@ func CallErr(env *Env, f Value, args ...Value) (rets []Value, err error) {
 	return runtime.Call(env, f, args), nil
 }
 
-// Run executes a transpiled chunk, converting Lua errors (panics) into a
-// returned error. This is the main entry point for host programs.
+// Run executes a chunk (a Script's Fn, or any Lua function), converting Lua
+// errors into a returned error. This is the main entry point for host programs.
 func Run(env *Env, chunk Fn, args ...Value) (rets []Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
