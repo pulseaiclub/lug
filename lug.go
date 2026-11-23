@@ -1,21 +1,21 @@
-// Package lug embeds Lua into Go by transpiling Lua source to Go code at
-// build time and running it on a small runtime.
+// Package lug embeds Lua in Go: scripts are interpreted at run time, so there
+// is no build step, no generated code, and no Go toolchain in the loop.
 //
-// Workflow:
-//
-//	lug gen -pkg game -o scripts_lug.go script.lua   # generates Go source
-//
-//	// game/scripts_lug.go (generated)
-//	var Chunk_script lg.Fn = func(env *lg.Env, args []lg.Value) []lg.Value { ... }
-//
-//	// host code
 //	env := lug.New()
-//	lug.Bind(env, "damage", func(p *Player, dmg float64) float64 { ... })
-//	rets, err := lug.Run(env, Chunk_script, lug.String("arg"))
+//	lug.Bind(env, "log", func(msg string) { fmt.Println(msg) })
+//	if _, err := lug.DoFile(env, "scripts/init.lua"); err != nil {
+//		log.Fatal(err)
+//	}
 //
-// The transpiled code has no interpreter overhead: every Lua function is a
-// real Go function, locals are Go variables, and the hot helpers in the
-// runtime package never use reflection.
+// A script is compiled once into a Script and can then be run repeatedly:
+//
+//	s, err := lug.CompileFile("scripts/init.lua")
+//	rets, err := s.Run(env, lug.String("arg"))
+//
+// Lua functions are ordinary values (Fn), so scripts and Go code call each
+// other freely, and pcall, coroutines, metatables and the standard library work
+// the same on both sides. Lua's own load, loadfile and dofile are available
+// because importing this package links the interpreter.
 package lug
 
 import (

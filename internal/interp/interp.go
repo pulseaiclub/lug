@@ -36,12 +36,233 @@ type Program struct {
 	src   string
 	file  *ast.File
 	depth atomic.Int64
+	// top wraps the chunk's statements so they share the block counts below.
+	top *ast.Block
+	// locals is how many locals each block can hold, which preallocates scopes
+	// so declaring a local never allocates or moves the bindings.
+	locals map[*ast.Block]int
+	// closure marks blocks that contain a function literal. Only those need a
+	// fresh scope per loop iteration, because only a closure can observe the
+	// difference between one shared binding and one binding per iteration.
+	closure map[*ast.Block]bool
 }
 
 // Compile prepares a parsed file for interpretation. src is used in error
 // messages and as the function name.
 func Compile(file *ast.File, src string) *Program {
-	return &Program{src: src, file: file}
+	p := &Program{src: src, file: file, top: &ast.Block{Stmts: file.Stmts},
+		locals: make(map[*ast.Block]int, 8), closure: make(map[*ast.Block]bool, 8)}
+	p.locals[p.top] = countLocals(p.top, p.locals)
+	for b := range p.locals {
+		p.closure[b] = containsFunc(b)
+	}
+	return p
+}
+
+// countLocals records how many locals the statements of b declare in b's own
+// scope, and visits every nested block and function body so all of them are
+// counted too. Missing one shows up as a scope overflow at run time rather than
+// as silent corruption, which is why declare checks the capacity.
+func countLocals(b *ast.Block, out map[*ast.Block]int) int {
+	n := 0
+	walkStmts(b.Stmts, out, func(extra int) { n += extra })
+	out[b] = n
+	return n
+}
+
+// containsFunc reports whether a function literal appears anywhere inside b,
+// which is the only way a loop iteration's binding can be observed after the
+// iteration ends.
+func containsFunc(b *ast.Block) bool {
+	found := false
+	var walkE func(ast.Expr)
+	walkE = func(e ast.Expr) {
+		if found || e == nil {
+			return
+		}
+		switch x := e.(type) {
+		case *ast.FuncExpr:
+			found = true
+		case *ast.BinExpr:
+			walkE(x.L)
+			walkE(x.R)
+		case *ast.UnExpr:
+			walkE(x.X)
+		case *ast.ParenExpr:
+			walkE(x.X)
+		case *ast.IndexExpr:
+			walkE(x.Obj)
+			walkE(x.Key)
+		case *ast.CallExpr:
+			walkE(x.Fn)
+			for _, a := range x.Args {
+				walkE(a)
+			}
+		case *ast.MethodExpr:
+			walkE(x.Obj)
+			for _, a := range x.Args {
+				walkE(a)
+			}
+		case *ast.TableExpr:
+			for _, f := range x.Fields {
+				walkE(f.Key)
+				walkE(f.Val)
+			}
+		}
+	}
+	var walkB func(*ast.Block)
+	walkB = func(blk *ast.Block) {
+		if found || blk == nil {
+			return
+		}
+		for _, st := range blk.Stmts {
+			switch x := st.(type) {
+			case *ast.LocalFuncStmt, *ast.FuncStmt:
+				found = true
+			case *ast.LocalStmt:
+				for _, v := range x.Vals {
+					walkE(v)
+				}
+			case *ast.AssignStmt:
+				for _, t := range x.Targets {
+					walkE(t)
+				}
+				for _, v := range x.Vals {
+					walkE(v)
+				}
+			case *ast.CallStmt:
+				walkE(x.Call)
+			case *ast.DoStmt:
+				walkB(x.Body)
+			case *ast.WhileStmt:
+				walkE(x.Cond)
+				walkB(x.Body)
+			case *ast.RepeatStmt:
+				walkB(x.Body)
+				walkE(x.Cond)
+			case *ast.IfStmt:
+				for i, c := range x.Conds {
+					walkE(c)
+					walkB(x.Blocks[i])
+				}
+				walkB(x.Else)
+			case *ast.NumForStmt:
+				walkE(x.Init)
+				walkE(x.Limit)
+				walkE(x.Step)
+				walkB(x.Body)
+			case *ast.GenForStmt:
+				for _, e := range x.Exprs {
+					walkE(e)
+				}
+				walkB(x.Body)
+			case *ast.ReturnStmt:
+				for _, v := range x.Vals {
+					walkE(v)
+				}
+			}
+		}
+	}
+	walkB(b)
+	return found
+}
+
+// walkStmts walks statements, reporting how many locals each declares in the
+// enclosing scope and recursing into nested blocks and function bodies.
+func walkStmts(stmts []ast.Stmt, out map[*ast.Block]int, add func(int)) {
+	for _, st := range stmts {
+		switch x := st.(type) {
+		case *ast.LocalStmt:
+			add(len(x.Names))
+			for _, v := range x.Vals {
+				walkExpr(v, out)
+			}
+		case *ast.LocalFuncStmt:
+			add(1)
+			countLocals(x.Body, out)
+		case *ast.FuncStmt:
+			walkExpr(x.Target, out)
+			countLocals(x.Body, out)
+		case *ast.AssignStmt:
+			for _, t := range x.Targets {
+				walkExpr(t, out)
+			}
+			for _, v := range x.Vals {
+				walkExpr(v, out)
+			}
+		case *ast.CallStmt:
+			walkExpr(x.Call, out)
+		case *ast.DoStmt:
+			countLocals(x.Body, out)
+		case *ast.WhileStmt:
+			walkExpr(x.Cond, out)
+			countLocals(x.Body, out)
+		case *ast.RepeatStmt:
+			countLocals(x.Body, out)
+			walkExpr(x.Cond, out)
+		case *ast.IfStmt:
+			for i, c := range x.Conds {
+				walkExpr(c, out)
+				countLocals(x.Blocks[i], out)
+			}
+			if x.Else != nil {
+				countLocals(x.Else, out)
+			}
+		case *ast.NumForStmt:
+			add(1) // the control variable gets a scope per iteration
+			for _, e := range []ast.Expr{x.Init, x.Limit, x.Step} {
+				if e != nil {
+					walkExpr(e, out)
+				}
+			}
+			countLocals(x.Body, out)
+		case *ast.GenForStmt:
+			add(len(x.Names))
+			for _, e := range x.Exprs {
+				walkExpr(e, out)
+			}
+			countLocals(x.Body, out)
+		case *ast.ReturnStmt:
+			for _, v := range x.Vals {
+				walkExpr(v, out)
+			}
+		}
+	}
+}
+
+// walkExpr visits the function literals inside an expression.
+func walkExpr(e ast.Expr, out map[*ast.Block]int) {
+	switch x := e.(type) {
+	case nil:
+		return
+	case *ast.FuncExpr:
+		countLocals(x.Body, out)
+	case *ast.BinExpr:
+		walkExpr(x.L, out)
+		walkExpr(x.R, out)
+	case *ast.UnExpr:
+		walkExpr(x.X, out)
+	case *ast.ParenExpr:
+		walkExpr(x.X, out)
+	case *ast.IndexExpr:
+		walkExpr(x.Obj, out)
+		walkExpr(x.Key, out)
+	case *ast.CallExpr:
+		walkExpr(x.Fn, out)
+		for _, a := range x.Args {
+			walkExpr(a, out)
+		}
+	case *ast.MethodExpr:
+		walkExpr(x.Obj, out)
+		for _, a := range x.Args {
+			walkExpr(a, out)
+		}
+	case *ast.TableExpr:
+		for _, f := range x.Fields {
+			walkExpr(f.Key, out)
+			walkExpr(f.Val, out)
+		}
+	}
 }
 
 // Parse parses Lua source and prepares it for interpretation.
@@ -66,8 +287,8 @@ func (p *Program) Chunk() lg.Fn {
 		if n > maxDepth {
 			lg.Errorf("%s: stack overflow (interpreted call depth exceeds %d)", p.src, maxDepth)
 		}
-		f := &frame{prog: p, env: env, args: args, scope: newScope(nil)}
-		f.block(&ast.Block{Stmts: p.file.Stmts})
+		f := &frame{prog: p, env: env, args: args, scope: newScope(nil, p.locals[p.top])}
+		f.block(p.top)
 		return f.rets
 	}
 }
@@ -87,10 +308,16 @@ func (p *Program) Run(env *lg.Env, args ...lg.Value) (rets []lg.Value, err error
 // scopes and control flow
 // ---------------------------------------------------------------------------
 
-// scope holds locals. A linear slice beats a map here: Lua blocks hold a
-// handful of names, and looking up "k" in a 2-entry slice is far cheaper than
-// hashing it. Values live behind pointers so a closure keeps seeing updates
-// made after it was created, exactly like Lua upvalues.
+// scope holds the locals of one block. A linear slice beats a map here: Lua
+// blocks hold a handful of names, and looking up "k" in a two-entry slice is
+// far cheaper than hashing it.
+//
+// Values live inline in the slice, not behind individual pointers, so declaring
+// a local costs no allocation; a closure can still see later updates because it
+// captures the scope and lookup returns a pointer into the slice. That is only
+// sound while the slice never grows, which is why the capacity is computed by
+// countLocals at parse time and why declare reports an overflow instead of
+// reallocating.
 type scope struct {
 	parent *scope
 	vars   []binding
@@ -98,24 +325,29 @@ type scope struct {
 
 type binding struct {
 	name string
-	cell *lg.Value
+	val  lg.Value
 }
 
-func newScope(parent *scope) *scope { return &scope{parent: parent} }
-
-func (s *scope) declare(name string, v lg.Value) *lg.Value {
-	cell := new(lg.Value)
-	*cell = v
-	s.vars = append(s.vars, binding{name: name, cell: cell})
-	return cell
+func newScope(parent *scope, capacity int) *scope {
+	return &scope{parent: parent, vars: make([]binding, 0, capacity)}
 }
 
-func (s *scope) lookup(name string) *lg.Value {
+func (s *scope) declare(name string, v lg.Value) *binding {
+	if len(s.vars) == cap(s.vars) {
+		// Growing would invalidate the *binding handed to closures, so this is
+		// a bug in the capacity analysis rather than something to recover from.
+		lg.Errorf("interp: internal error: scope holds more than %d locals", cap(s.vars))
+	}
+	s.vars = append(s.vars, binding{name: name, val: v})
+	return &s.vars[len(s.vars)-1]
+}
+
+func (s *scope) lookup(name string) *binding {
 	for sc := s; sc != nil; sc = sc.parent {
 		// Later bindings shadow earlier ones in the same block.
 		for i := len(sc.vars) - 1; i >= 0; i-- {
 			if sc.vars[i].name == name {
-				return sc.vars[i].cell
+				return &sc.vars[i]
 			}
 		}
 	}
@@ -144,12 +376,24 @@ type frame struct {
 }
 
 func (f *frame) block(b *ast.Block) flow {
+	var depths map[int]int // binding count at each label, once it has run
 	for pc := 0; pc < len(b.Stmts); pc++ {
+		if _, ok := b.Stmts[pc].(*ast.LabelStmt); ok {
+			if depths == nil {
+				depths = make(map[int]int, 2)
+			}
+			depths[pc] = len(f.scope.vars)
+		}
 		fl := f.stmt(b.Stmts[pc])
 		if fl == flowGoto {
 			// A goto may target a label in this block or in an enclosing one;
 			// enclosing blocks handle it when this block propagates up.
 			if idx, ok := labelIndex(b, f.gotoLbl); ok {
+				// Jumping backwards leaves the locals declared after the label,
+				// so drop them; the label re-declares whatever it needs.
+				if d, seen := depths[idx]; seen && idx <= pc {
+					f.scope.vars = f.scope.vars[:d]
+				}
 				pc = idx
 				continue
 			}
@@ -174,13 +418,22 @@ func labelIndex(b *ast.Block, name string) (int, bool) {
 func (f *frame) stmt(s ast.Stmt) flow {
 	switch x := s.(type) {
 	case *ast.LocalStmt:
+		// The single-name case dominates real code and needs no slice.
+		if len(x.Names) == 1 {
+			v := lg.Nil
+			if len(x.Vals) == 1 {
+				v = f.eval(x.Vals[0])
+			}
+			f.scope.declare(x.Names[0], v)
+			return flowNormal
+		}
 		vals := f.evalList(x.Vals, len(x.Names))
 		for i, name := range x.Names {
 			f.scope.declare(name, lg.Arg(vals, i))
 		}
 	case *ast.LocalFuncStmt:
-		cell := f.scope.declare(x.Name, lg.Nil) // declare first: the body may recurse
-		*cell = f.funcValue(x.Name, x.Params, x.Vararg, x.Body)
+		b := f.scope.declare(x.Name, lg.Nil) // declare first: the body may recurse
+		b.val = f.funcValue(x.Name, x.Params, x.Vararg, x.Body)
 	case *ast.FuncStmt:
 		fn := f.funcValue(x.Method, x.Params, x.Vararg, x.Body)
 		if x.Method == "" {
@@ -210,7 +463,7 @@ func (f *frame) stmt(s ast.Stmt) flow {
 		for {
 			// The condition sees the body's locals, so it is evaluated while
 			// that scope is still installed.
-			f.scope = newScope(outer)
+			f.scope = newScope(outer, f.prog.locals[x.Body])
 			fl := f.block(x.Body)
 			if fl == flowBreak {
 				f.scope = outer
@@ -255,7 +508,7 @@ func (f *frame) stmt(s ast.Stmt) flow {
 
 func (f *frame) inScope(b *ast.Block) flow {
 	old := f.scope
-	f.scope = newScope(old)
+	f.scope = newScope(old, f.prog.locals[b])
 	fl := f.block(b)
 	f.scope = old
 	return fl
@@ -283,9 +536,25 @@ func (f *frame) numFor(x *ast.NumForStmt) flow {
 	}
 	outer := f.scope
 	defer func() { f.scope = outer }()
+	// The body shares its scope with the control variable, so both must fit.
+	reused := newScope(outer, 1+f.prog.locals[x.Body])
+	fresh := f.prog.closure[x.Body]
+	if !fresh {
+		reused.declare(x.Var, lg.Nil)
+	}
 	for v := initV; (step > 0 && v <= limitV) || (step < 0 && v >= limitV); v += step {
-		f.scope = newScope(outer)
-		f.scope.declare(x.Var, lg.Number(v)) // fresh cell per iteration
+		if fresh {
+			// A closure in the body may capture the control variable, so each
+			// iteration needs its own binding.
+			f.scope = newScope(outer, 1+f.prog.locals[x.Body])
+			f.scope.declare(x.Var, lg.Number(v))
+		} else {
+			// Otherwise one binding is enough and the body's locals are dropped
+			// before the next iteration reuses the slots.
+			reused.vars = reused.vars[:1]
+			reused.vars[0].val = lg.Number(v)
+			f.scope = reused
+		}
 		fl := f.block(x.Body)
 		if fl == flowBreak {
 			return flowNormal
@@ -307,12 +576,13 @@ func (f *frame) genFor(x *ast.GenForStmt) flow {
 			return flowNormal
 		}
 		old := f.scope
-		f.scope = newScope(old)
+		f.scope = newScope(old, len(x.Names)+f.prog.locals[x.Body])
 		for i, name := range x.Names {
 			f.scope.declare(name, lg.Arg(rets, i))
 		}
 		fl := f.block(x.Body)
 		f.scope = old
+		_ = fl
 		if fl == flowBreak {
 			return flowNormal
 		}
@@ -325,18 +595,47 @@ func (f *frame) genFor(x *ast.GenForStmt) flow {
 // assignList evaluates every target prefix and key before any value is stored,
 // which is what Lua guarantees (`a[i], a[j] = a[j], a[i]` swaps).
 func (f *frame) assignList(targets []ast.Expr, vals []ast.Expr) {
+	// The common case: one target, which needs no slot bookkeeping.
+	if len(targets) == 1 {
+		switch t := targets[0].(type) {
+		case *ast.NameExpr:
+			v := lg.Nil
+			if len(vals) == 1 {
+				v = f.eval(vals[0])
+			} else if len(vals) > 1 {
+				v = lg.Arg(f.evalList(vals, -1), 0)
+			}
+			if b := f.scope.lookup(t.Name); b != nil {
+				b.val = v
+				return
+			}
+			f.env.Set(t.Name, v)
+			return
+		case *ast.IndexExpr:
+			obj := f.eval(t.Obj)
+			key := f.eval(t.Key)
+			v := lg.Nil
+			if len(vals) == 1 {
+				v = f.eval(vals[0])
+			} else if len(vals) > 1 {
+				v = lg.Arg(f.evalList(vals, -1), 0)
+			}
+			lg.SetIndex(f.env, obj, key, v)
+			return
+		}
+	}
 	type slot struct {
-		cell *lg.Value
-		obj  lg.Value
-		key  lg.Value
-		idx  bool
+		b   *binding
+		obj lg.Value
+		key lg.Value
+		idx bool
 	}
 	slots := make([]slot, len(targets))
 	for i, t := range targets {
 		switch x := t.(type) {
 		case *ast.NameExpr:
-			if cell := f.scope.lookup(x.Name); cell != nil {
-				slots[i] = slot{cell: cell}
+			if b := f.scope.lookup(x.Name); b != nil {
+				slots[i] = slot{b: b}
 			} else {
 				slots[i] = slot{obj: f.env.Globals(), key: lg.String(x.Name), idx: true}
 			}
@@ -351,7 +650,7 @@ func (f *frame) assignList(targets []ast.Expr, vals []ast.Expr) {
 		if sl.idx {
 			lg.SetIndex(f.env, sl.obj, sl.key, lg.Arg(values, i))
 		} else {
-			*sl.cell = lg.Arg(values, i)
+			sl.b.val = lg.Arg(values, i)
 		}
 	}
 }
@@ -360,8 +659,8 @@ func (f *frame) assignList(targets []ast.Expr, vals []ast.Expr) {
 func (f *frame) assign(target ast.Expr, v lg.Value) {
 	switch x := target.(type) {
 	case *ast.NameExpr:
-		if cell := f.scope.lookup(x.Name); cell != nil {
-			*cell = v
+		if b := f.scope.lookup(x.Name); b != nil {
+			b.val = v
 			return
 		}
 		f.env.Set(x.Name, v)
@@ -391,8 +690,8 @@ func (f *frame) eval(e ast.Expr) lg.Value {
 	case *ast.VarargExpr:
 		return lg.Arg(f.args, 0)
 	case *ast.NameExpr:
-		if cell := f.scope.lookup(x.Name); cell != nil {
-			return *cell
+		if b := f.scope.lookup(x.Name); b != nil {
+			return b.val
 		}
 		return f.env.Get(x.Name)
 	case *ast.ParenExpr:
@@ -588,7 +887,8 @@ func (f *frame) funcValue(name string, params []string, vararg bool, body *ast.B
 		if n > maxDepth {
 			lg.Errorf("stack overflow (interpreted call depth exceeds %d)", maxDepth)
 		}
-		nf := frame{prog: prog, env: env, scope: newScope(parent)}
+		nf := frame{prog: prog, env: env, args: args}
+		nf.scope = newScope(parent, len(params)+prog.locals[body])
 		for i, p := range params {
 			nf.scope.declare(p, lg.Arg(args, i))
 		}

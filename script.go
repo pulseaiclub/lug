@@ -11,16 +11,12 @@ import (
 
 // Run-time compilation.
 //
-// The transpiler turns Lua into Go at build time, which is the fast path: the
-// Go compiler optimizes it and nothing is parsed at startup. Scripts that only
-// exist at run time — user mods, config snippets, hot-reloaded files — cannot
-// use that path, so lug also ships an AST interpreter. Both produce the same
-// kind of value (a Fn taking an Env), so interpreted and transpiled code call
-// each other freely: pcall, coroutines, metatables, Bind and Expose all apply
-// to both.
+// Lua source is parsed into an AST and interpreted; nothing is pre-compiled and
+// no toolchain is needed at any point. A Script parses once and then runs as
+// often as needed, including concurrently.
 //
-// Switching the compiler on also enables the Lua-level load, loadfile and
-// dofile functions, so a script can load further scripts by itself.
+// Linking this package also enables the Lua-level load, loadfile and dofile
+// functions, so a script can load further scripts by itself.
 
 func init() {
 	runtime.InstallLoader(func(source, chunkname string) (Fn, error) {
