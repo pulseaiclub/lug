@@ -1,0 +1,14 @@
+start	1	2
+true	3
+suspended
+resumed with	10
+true	20
+resumed with	7	8
+true	done
+dead
+false	cannot resume dead coroutine
+1	2	3
+sum	30
+false	inside
+false
+true	true

@@ -1,0 +1,11 @@
+Cat says meow
+Rex says woof
+Rex fetches
+true	false	true	99
+V(1,2)
+V(1,2)+x
+called with hi
+foo!	bar!
+RO:1
+locked
+false	cannot change a protected metatable

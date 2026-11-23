@@ -1,0 +1,23 @@
+print(("hello world"):find("wor"))
+print(("hello world"):find("wor", 1, true))
+print(("2024-01-15"):match("(%d+)-(%d+)-(%d+)"))
+print(("key=value"):match("^(%w+)=(%w+)$"))
+print(("abc"):match("x"))
+for w in ("one two three"):gmatch("%a+") do io.write(w, ".") end
+io.write("\n")
+print(("hello"):gsub("l", "L"))
+print(("hello world"):gsub("(o)", "<%1>"))
+print(("a1b22c333"):gsub("%d+", function(n) return "[" .. n .. "]" end))
+print(("x=1,y=2"):gsub("(%w+)=(%w+)", {x = "X"}))
+print(string.find("abc", "b", -2))
+print(("Hello"):upper(), ("Hello"):lower(), ("Hello"):reverse())
+print(("  trim  "):match("^%s*(.-)%s*$"))
+print(("a,b,c"):gsub(",", ";"))
+local n = 0
+for a, b in ("(1)(2)"):gmatch("%((%d)%)%((%d)%)") do n = n + a + b end
+print(n)
+print(("path/to/file.txt"):match("([^/]+)$"))
+print(string.format("%5.2f|%-6s|%03d|%x", 3.14159, "ab", 7, 255))
+print(("banana"):gsub("a", "A", 2))
+print(("x"):rep(0))
+print(#"\0abc")

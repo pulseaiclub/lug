@@ -1,0 +1,16 @@
+# Binaries and build output
+/lug
+/dist/
+/bin/
+*.exe
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

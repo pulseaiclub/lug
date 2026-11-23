@@ -1,0 +1,18 @@
+false	boom
+false	table	42
+false	msg
+true	1	2
+false	outer saw: inner
+false	attempt to perform arithmetic on a nil value
+false	attempt to index a nil value
+false	attempt to call a string value
+false	attempt to call a nil value
+false	OBJ
+false	custom msg
+false	assertion failed!
+true	42
+false	H:handled
+true	fine	2
+2
+c
+false	deep
