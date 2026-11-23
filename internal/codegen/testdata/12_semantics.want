@@ -1,0 +1,15 @@
+odd sum	25
+goto loop	3
+nested	1
+nested	2
+repeat	3
+3	1	-4	1024
+1	7	6	16	8	-1
+hi bob	42	obj(bob)	nil
+3	1	2	3
+3	4	1
+2	99	2
+fallback	false	2
+true	false	15	abc1
+shared upvalue	2
+for steps	13.5

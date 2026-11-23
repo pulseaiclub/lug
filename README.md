@@ -145,6 +145,80 @@ Notes:
 - A script cannot be loaded from a string at runtime: `load`/`dofile` are not
   implemented, by design. The source must exist at build time.
 
+## Running scripts at run time
+
+The transpiler needs the source at build time. When scripts appear later —
+user mods, config snippets, hot reloads — use the interpreter instead:
+
+```go
+env := lug.New()
+lug.Bind(env, "log", func(msg string) { fmt.Println(msg) })
+
+// Compile once, run as often as needed.
+s, err := lug.CompileFile("scripts/hello.lua")
+if err != nil {
+	return err // syntax error, reported as a Go error
+}
+rets, err := s.Run(env, lug.String("world"))
+
+// Or straight from a string.
+if _, err := lug.DoString(env, `log("hi " .. name)`); err != nil {
+	return err
+}
+```
+
+A compiled script is an ordinary `lug.Fn`, so interpreted and transpiled code
+are interchangeable: `pcall`, coroutines, metatables, `Bind`, `Expose` and the
+whole standard library apply to both, and they can call each other.
+
+Because importing `lug` links the interpreter, Lua code gains the loaders:
+
+```lua
+local chunk = load("return 6 * 7")     -- nil, message on a syntax error
+print(chunk())                          --> 42
+print(dofile("scripts/other.lua"))      -- runs a file, returns its results
+```
+
+`examples/embed` is the full version: it walks a directory, gives every script
+its own sandbox, calls `on_load` / `on_tick` / `on_unload` hooks, and keeps a
+broken script from affecting the others.
+
+### Sandboxing scripts
+
+```go
+env := lug.NewSandboxed("mod-name", lug.SandboxOptions{
+	AllowPrint: true,
+	OnPrint:    func(tag, line string) { fmt.Printf("[%s] %s\n", tag, line) },
+})
+```
+
+A sandbox starts empty of capabilities: no `os`, no `io`, no `load`/`dofile`,
+no `require`/`debug`, and no `print` unless asked for. Each sandbox has its own
+globals table, so two scripts never share variables. `SandboxOptions{OS: true}`
+exposes only `os.time`, `os.date`, `os.clock`, `os.difftime`; `IO: true` only
+`io.write`. `os.execute`, `os.remove`, `os.getenv` and `os.exit` are never
+available.
+
+The sandbox limits capabilities, not resources: a script that loops forever
+cannot be interrupted, because transpiled loops are plain Go loops. Use a
+separate process for genuinely untrusted code.
+
+### Cost
+
+Interpreted code exists for scripts the binary did not ship with. Measured on
+this machine (Apple M3):
+
+| Workload | Transpiled | Interpreted | gopher-lua |
+|---|---|---|---|
+| `fib(24)` | 0.14 ms | 34 ms | 8.5 ms |
+| 100k numeric loop | 0.08 ms | 14 ms | 8.6 ms |
+
+So the interpreter is ~200x slower than the transpiler and ~2-4x slower than
+gopher-lua's bytecode VM: every node goes through an interface type switch,
+every value is a 48-byte box, and every call allocates a scope and an argument
+slice. Keep the hot path transpiled — that is what the AOT half is for — and
+interpret the layer that must load at run time.
+
 ## Embedding API
 
 ```go
@@ -233,14 +307,20 @@ dispatch loop and no per-instruction decoding.
 
 ```
 lug.go                 public embedding API
+script.go              run-time compilation (Script, DoString, DoFile, sandbox)
+generic.go             As/Get/Run1/Slice/TableOf/Userdata helpers
 cmd/lug/               CLI (gen, run, version)
 internal/lexer         Lua 5.4 lexer
 internal/ast           surface AST
 internal/parser        recursive-descent parser with precedence climbing
 internal/codegen       Lua AST → Go source (specialization passes live here)
+internal/interp        Lua AST interpreter, for scripts unknown at build time
 runtime/               the generated code's runtime: Value, Table, Env,
-                       closures, metatables, stdlib, coroutines
-internal/codegen/testdata  differential-style golden tests (Lua + expected output)
+                       closures, metatables, stdlib, coroutines, sandbox
+examples/greet         build-time transpiling, end to end
+examples/embed         run-time loading of scripts from a directory
+internal/codegen/testdata  golden scripts run by *both* the transpiler and
+                       the interpreter, so semantics cannot drift apart
 ```
 
 The code generator runs three analyses before emitting: usage collection
@@ -261,16 +341,26 @@ temporary module against the real runtime, executed, and its stdout compared
 with the matching `.want` file (or `.wanterr` for expected failures). Adding a
 case is just dropping in two files.
 
+The same scripts are then interpreted and compared with the *same* golden files
+(`internal/interp`). Because one source file is checked on both execution
+paths, the interpreter cannot drift from the transpiled semantics — that is how
+the multiple-assignment ordering bug (`i, t[i] = 2, 99`) and the userdata
+method-receiver bug were found.
+
 ## Limitations
 
 - Numbers are `float64` only (documented above); `string`↔`number` coercion
   follows Lua 5.4.
 - `coroutine.yield` cannot cross a Go stack frame (calling a Go function that
   yields is unsupported), and coroutines are goroutine-backed.
-- `io` is limited to `io.write`; `load`, `dofile`, `require` and the debug
-  library are not implemented.
-- The transpiler targets AOT compilation: Lua source is known at build time.
-  There is no runtime `load` of new source.
+- `io` is limited to `io.write`; `require` and the debug library are not
+  implemented.
+- The transpiler targets AOT compilation. Scripts that only exist at run time
+  go through the interpreter (see above), which is ~200x slower; `load` is
+  available only because importing `lug` links that interpreter, and it accepts
+  string chunks only (no reader functions).
+- The interpreter has no `setfenv`/`_ENV` rebinding, and its error messages
+  carry no line numbers.
 
 ## License
 

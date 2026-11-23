@@ -38,6 +38,15 @@ func installBase(e *Env) {
 }
 
 func basePrint(env *Env, args []Value) []Value {
+	line := PrintLine(env, args)
+	os.Stdout.WriteString(line)
+	os.Stdout.WriteString("\n")
+	return nil
+}
+
+// PrintLine formats arguments the way print does, but without the trailing
+// newline: values are separated by a tab and rendered with tostring.
+func PrintLine(env *Env, args []Value) string {
 	var sb strings.Builder
 	for i, a := range args {
 		if i > 0 {
@@ -45,9 +54,7 @@ func basePrint(env *Env, args []Value) []Value {
 		}
 		sb.WriteString(ToStringEnv(env, a))
 	}
-	sb.WriteByte('\n')
-	os.Stdout.WriteString(sb.String())
-	return nil
+	return sb.String()
 }
 
 func baseType(env *Env, args []Value) []Value {

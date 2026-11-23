@@ -907,11 +907,31 @@ func (f *fnGen) emitAssign(v *ast.AssignStmt) {
 			return
 		}
 	}
+	// Lua evaluates every target's object and key expression before it stores
+	// anything, and before the right-hand side runs. `i, t[i] = 2, 99` must
+	// therefore write t[1], not t[2].
+	type indexTemps struct{ obj, key string }
+	pre := make([]indexTemps, len(v.Targets))
+	for i, t := range v.Targets {
+		ix, ok := t.(*ast.IndexExpr)
+		if !ok {
+			continue
+		}
+		obj := f.temp("obj")
+		f.line("%s := %s", obj, f.expr(ix.Obj))
+		key := f.temp("key")
+		f.line("%s := %s", key, f.expr(ix.Key))
+		pre[i] = indexTemps{obj: obj, key: key}
+	}
 	// Materialize the RHS once: each target picks from the same value list
 	// (t[i], t[j] = t[j], t[i] must swap, not evaluate twice).
 	r := f.temp("r")
 	f.line("%s := %s", r, f.listExpr(v.Vals))
 	for i, t := range v.Targets {
+		if pre[i].obj != "" {
+			f.line("lg.SetIndex(env, %s, %s, lg.Pick(%s, %d))", pre[i].obj, pre[i].key, r, i)
+			continue
+		}
 		if nm, ok := t.(*ast.NameExpr); ok {
 			if gn, ok2 := f.g.resolve(nm.Name); ok2 && f.g.isNumLocal(gn) {
 				f.line("%s = lg.NumVal(lg.Pick(%s, %d))", gn, r, i)
