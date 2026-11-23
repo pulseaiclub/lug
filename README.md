@@ -1,5 +1,7 @@
 # lug
 
+[![ci](https://github.com/pulseaiclub/lug/actions/workflows/ci.yml/badge.svg)](https://github.com/pulseaiclub/lug/actions/workflows/ci.yml)
+
 Lua embedded in Go as a **scripting language**: source is parsed and interpreted
 at run time, so there is no build step, no generated code and no Go toolchain in
 the loop. Drop a `.lua` file next to your binary and run it.

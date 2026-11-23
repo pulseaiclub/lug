@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about embedding
+    url: https://github.com/pulseaiclub/lug/blob/main/README.md
+    about: The README covers binding Go functions, exposing Go values, sandboxing and benchmarks.

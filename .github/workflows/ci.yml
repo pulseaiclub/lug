@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Race detector
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
+
+  lint:
+    name: gofmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt wants to rewrite these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  cli:
+    name: cli smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run a chunk from -e
+        run: |
+          out="$(go run ./cmd/lug -e 'print(2^10, ("lug"):upper())')"
+          echo "$out"
+          [ "$out" = "$(printf '1024\tLUG')" ]
+
+      - name: Run a script file with arguments
+        run: |
+          printf 'print("hello", ...)\nprint(arg[0], arg[1])\n' > /tmp/hello.lua
+          out="$(go run ./cmd/lug /tmp/hello.lua world extra)"
+          echo "$out"
+          [ "$out" = "$(printf 'hello\tworld\textra\n/tmp/hello.lua\tworld')" ]
+
+      - name: A syntax error exits non-zero
+        run: |
+          printf 'if true then\n' > /tmp/broken.lua
+          if go run ./cmd/lug /tmp/broken.lua; then
+            echo "expected a non-zero exit"
+            exit 1
+          fi
+
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run the plugin host example
+        working-directory: examples/embed
+        run: go run .

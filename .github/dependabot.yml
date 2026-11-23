@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # lug has no module dependencies, but a stray one would go unnoticed, so keep
+  # this enabled; it stays quiet while go.mod stays empty.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
