@@ -15,8 +15,8 @@ import (
 // Point is the host type testdata/08_interop.lua manipulates.
 type Point struct{ X, Y float64 }
 
-// hostEnv builds the same environment the transpiler E2E harness uses, so both
-// execution paths can be compared against the same golden files.
+// hostEnv builds the environment testdata/08_interop.lua expects: a bound Go
+// function and an exposed Go struct.
 func hostEnv() *lg.Env {
 	env := lg.New()
 	env.Set("host_add", lg.WrapFunc(func(a, b float64) float64 { return a + b }))

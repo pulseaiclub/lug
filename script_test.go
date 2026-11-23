@@ -163,8 +163,8 @@ func TestLuaLoadAndDofile(t *testing.T) {
 	}
 }
 
-// TestScriptErrors checks that syntax errors, runtime errors and pcall all
-// behave like they do on the transpiled path.
+// TestScriptErrors checks that syntax errors, runtime errors and pcall behave
+// the way Lua does.
 func TestScriptErrors(t *testing.T) {
 	env := lug.New()
 
@@ -197,8 +197,8 @@ func TestScriptErrors(t *testing.T) {
 	}
 }
 
-// TestScriptMutualRecursion mixes both execution modes: a transpiled chunk
-// (emulated here by a Go closure) calls an interpreted script and vice versa.
+// TestScriptMutualRecursion mixes both execution modes: a Go function (a host
+// binding, standing in for one) calls an interpreted script and vice versa.
 func TestScriptMutualRecursion(t *testing.T) {
 	env := lug.New()
 	script, err := lug.Compile(`return 1`, "=leaf")

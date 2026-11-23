@@ -18,7 +18,7 @@ func (p *Player) Damage(d float64) float64 {
 	return p.HP
 }
 
-// chunk emulates transpiled code: a function that returns fixed values.
+// chunk returns a Lua-callable that ignores its arguments and returns rets.
 func chunk(rets ...lg.Value) lug.Fn {
 	return func(_ *lg.Env, _ []lg.Value) []lg.Value { return rets }
 }
@@ -141,7 +141,7 @@ func TestBindCallRoundTrip(t *testing.T) {
 	p := &Player{HP: 100}
 	lug.Expose(env, "player", p)
 
-	// Emulates transpiled Lua: damage(player, 25).
+	// What interpreted Lua would do for damage(player, 25).
 	callDamage := func(e *lg.Env, _ []lg.Value) []lg.Value {
 		f := e.Get("damage")
 		return lg.Call(e, f, []lg.Value{e.Get("player"), lug.Number(25)})

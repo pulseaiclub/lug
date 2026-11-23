@@ -16,6 +16,10 @@
 // other freely, and pcall, coroutines, metatables and the standard library work
 // the same on both sides. Lua's own load, loadfile and dofile are available
 // because importing this package links the interpreter.
+//
+// lug is a library only: there is no command and no generated code. A host
+// program decides when to load a script and which capabilities it gets; see
+// NewSandboxed for running scripts from other authors.
 package lug
 
 import (

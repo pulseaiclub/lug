@@ -17,8 +17,6 @@
 // slices that a uniform "list of expressions" path would allocate.
 package interp
 
-package interp
-
 import (
 	"sync/atomic"
 
