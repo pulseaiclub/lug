@@ -60,6 +60,91 @@ Typical project wiring:
 //go:generate lug gen -pkg game -o script_lug.go scripts/main.lua
 ```
 
+## Loading a script and running it
+
+Compilation happens at build time, so "loading a script" is two steps: generate
+Go from the Lua source once, then call the generated chunk like any other
+function. `examples/greet` is the complete runnable version of this section:
+
+```sh
+go generate ./examples/greet   # greet.lua + half.lua -> *_lug.go
+go run ./examples/greet
+```
+
+The script (`examples/greet/greet.lua`):
+
+```lua
+local args = { ... }
+local who = args[1] or "world"
+
+print("hello, " .. who)
+local before = player.HP       -- exposed Go struct, exact Go field names
+player:Damage(25)              -- pointer-receiver method
+print("HP:", before, "->", player.HP)
+
+function greet(name)           -- host calls this later, as often as it wants
+	print("greet:", name)
+	return #name
+end
+
+return who, player.HP, #who    -- several values back to Go
+```
+
+The host (`examples/greet/main.go`):
+
+```go
+type Player struct{ HP float64 }
+
+func (p *Player) Damage(dmg float64) float64 { p.HP -= dmg; return p.HP }
+
+func main() {
+	env := lug.New()
+	player := &Player{HP: 100}
+	lug.Expose(env, "player", player)                       // Go value -> userdata
+	lug.Bind(env, "roll", func(sides float64) float64 { return sides })
+
+	// 1. Run the chunk once, with arguments like `lua greet.lua gopher`.
+	rets, err := lug.Run(env, Chunk_greet, lug.String("gopher"))
+	if err != nil {
+		log.Fatal(err) // Lua errors arrive as a Go error
+	}
+	who, _ := lug.As[string](rets[0])
+	hp, _ := lug.As[float64](rets[1])
+	fmt.Println(who, hp, player.HP) // gopher 75 75
+
+	// 2. Call a Lua function the script defined.
+	greet := env.Get("greet")
+	n, err := lug.CallErr(env, greet, lug.String("ada")) // n[0] == 3
+
+	// 3. Errors inside Lua are values, not crashes.
+	_, err = lug.Run(env, Chunk_greet, lug.String("boom")) // "boom was requested"
+
+	// 4. A single-result chunk with a typed result.
+	half, err := lug.Run1[float64](env, Chunk_half, lug.Number(7)) // 3.5
+}
+```
+
+Output:
+
+```
+hello, gopher
+HP:	100	->	75
+greet:	ada
+chunk returned: who="gopher" hp=75 len=6
+handled lua error: boom was requested
+half(7) = 3.5
+```
+
+Notes:
+
+- The chunk is an ordinary `lug.Fn` value, so it can be stored in a map,
+  passed to a goroutine, or registered in a plugin table.
+- Fields on exposed structs use their **Go names** (`player.HP`, not `hp`), and
+  methods work with either call style: `player:Damage(25)` or
+  `player.Damage(25)`.
+- A script cannot be loaded from a string at runtime: `load`/`dofile` are not
+  implemented, by design. The source must exist at build time.
+
 ## Embedding API
 
 ```go

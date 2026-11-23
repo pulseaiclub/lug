@@ -260,6 +260,12 @@ func userdataIndex(env *Env, u *Userdata, key Value) (Value, bool) {
 func wrapMethod(u *Userdata, m reflect.Value, name string) Value {
 	rt := m.Type()
 	return NewClosure(func(env *Env, args []Value) []Value {
+		// Lua's `obj:m(a)` passes the receiver as the first argument, but a
+		// bound method value already has it bound: drop it when it is this
+		// userdata, so `obj:m(a)` and `obj.m(a)` both work.
+		if len(args) > 0 && args[0].Userdata() == u {
+			args = args[1:]
+		}
 		return callReflect(env, rt, func(in []reflect.Value) []reflect.Value {
 			return m.Call(in)
 		}, args)

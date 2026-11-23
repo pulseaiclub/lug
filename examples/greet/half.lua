@@ -1,0 +1,3 @@
+-- half.lua -- a single-result script, run from Go with lug.Run1[float64].
+local n = ...
+return n / 2

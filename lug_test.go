@@ -205,3 +205,35 @@ func TestValueOf(t *testing.T) {
 		t.Fatalf("ValueOf(&Player) = %+v, %v", p, ok)
 	}
 }
+
+// TestUserdataMethodCall guards the receiver handling of `obj:method(x)`:
+// a bound method value already has its receiver bound, so the self argument
+// Lua passes must be dropped instead of being converted as a real parameter.
+func TestUserdataMethodCall(t *testing.T) {
+	env := lug.New()
+	p := &Player{HP: 100}
+	lug.Expose(env, "player", p)
+	self := env.Get("player")
+	method := lg.Index(env, self, lug.String("Damage"))
+
+	// `player:Damage(25)`: self is passed explicitly.
+	rets, err := lug.CallErr(env, method, self, lug.Number(25))
+	if err != nil {
+		t.Fatalf("self-call: %v", err)
+	}
+	if hp, _ := lug.AsFloat(lg.Arg(rets, 0)); hp != 75 {
+		t.Fatalf("HP after self-call = %v, want 75", hp)
+	}
+
+	// `player.Damage(25)`: no self argument.
+	rets, err = lug.CallErr(env, method, lug.Number(25))
+	if err != nil {
+		t.Fatalf("plain-call: %v", err)
+	}
+	if hp, _ := lug.AsFloat(lg.Arg(rets, 0)); hp != 50 {
+		t.Fatalf("HP after plain call = %v, want 50", hp)
+	}
+	if p.HP != 50 {
+		t.Fatalf("the Go object was not mutated: HP = %v", p.HP)
+	}
+}

@@ -81,6 +81,18 @@ func Expose(env *Env, name string, v any) { env.Set(name, runtime.WrapValue(v)) 
 // Call invokes a Lua value from Go, raising a *runtime.LuaError on failure.
 func Call(env *Env, f Value, args ...Value) []Value { return runtime.Call(env, f, args) }
 
+// CallErr is Call with Lua errors converted into a Go error instead of a
+// panic. Use it when calling a Lua function obtained from the environment,
+// e.g. a callback a script stored in a global.
+func CallErr(env *Env, f Value, args ...Value) (rets []Value, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = runtime.WrapPanic(r)
+		}
+	}()
+	return runtime.Call(env, f, args), nil
+}
+
 // Run executes a transpiled chunk, converting Lua errors (panics) into a
 // returned error. This is the main entry point for host programs.
 func Run(env *Env, chunk Fn, args ...Value) (rets []Value, err error) {
