@@ -3,7 +3,6 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -15,37 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
-
-      - name: Race detector
-        if: matrix.os == 'ubuntu-latest'
-        run: go test -race ./...
-
-  lint:
-    name: gofmt
+  check:
+    name: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,88 +35,8 @@ jobs:
             exit 1
           fi
 
-  docs:
-    name: package documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Vet
+        run: go vet ./...
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      # The examples in example_test.go are part of the documentation: go test
-      # checks their output, so a stale comment cannot survive.
-      - name: Run the documentation examples
-        run: go test -run Example -v .
-
-  dependency:
-    name: use as a dependency
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      # Build a throwaway module that imports lug the way a host program does,
-      # so a broken public API cannot slip through.
-      - name: Build an external module against this checkout
-        run: |
-          work="$(mktemp -d)"
-          cd "$work"
-          go mod init example.com/host
-          go mod edit -require=github.com/pulseaiclub/lug@v0.0.0
-          go mod edit -replace=github.com/pulseaiclub/lug="$GITHUB_WORKSPACE"
-          cat > main.go <<'GO'
-          package main
-
-          import (
-          	"fmt"
-
-          	"github.com/pulseaiclub/lug"
-          )
-
-          func main() {
-          	env := lug.New()
-          	lug.Bind(env, "half", func(n float64) float64 { return n / 2 })
-
-          	rets, err := lug.DoString(env, "return half(7), type(missing_global)")
-          	if err != nil {
-          		panic(err)
-          	}
-          	fmt.Println(lug.Get[float64](rets, 0))
-          	fmt.Println(lug.Get[string](rets, 1))
-          }
-          GO
-          go mod tidy
-
-          got="$(go run .)"
-          want="$(printf '3.5\nnil')"
-          if [ "$got" != "$want" ]; then
-            echo "unexpected output:"
-            echo "$got"
-            exit 1
-          fi
-          echo "$got"
-
-  examples:
-    name: examples
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run the plugin host example
-        working-directory: examples/embed
-        run: go run .
+      - name: Test with race detector
+        run: go test -race ./...

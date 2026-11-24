@@ -209,6 +209,7 @@ interpreted functions, Go functions and library functions are interchangeable.
 
 ```sh
 go test ./...
+go test -race ./...
 go test ./internal/interp -bench . -run xxx
 ```
 
@@ -217,7 +218,22 @@ expected error message (`.wanterr`). They cover closures and shared upvalues,
 metatables, varargs, multiple-assignment order, `goto`, coroutines, error
 propagation, numeric/bitwise semantics and the standard library — including the
 cases that are easy to get wrong, such as `i, t[i] = 2, 99` (which must write
-`t[1]`) and closures capturing a loop variable.
+t[1]`) and closures capturing a loop variable.
+
+## Release
+
+This repository publishes the Go module from version tags. Create and push a
+semver tag to run the release workflow and make the version available through
+the Go module proxy:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Use an existing `v*` tag in the GitHub Actions `release` workflow when a manual
+release is needed. The workflow runs `go vet ./...` and `go test ./...`, then
+creates a GitHub Release with generated notes.
 
 ## Limitations
 
