@@ -4,7 +4,7 @@
 // Host programs normally use the top-level lug package instead, which
 // re-exports the types and constructors needed at the API boundary. This
 // package is public because a host may want the pieces directly: value kinds,
-// tables, metatables, coroutines and the sandbox configuration.
+// tables, metatables and coroutines.
 //
 // Design notes:
 //

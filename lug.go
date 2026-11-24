@@ -18,8 +18,7 @@
 // because importing this package links the interpreter.
 //
 // lug is a library only: there is no command and no generated code. A host
-// program decides when to load a script and which capabilities it gets; see
-// NewSandboxed for running scripts from other authors.
+// program decides when to load and run scripts.
 package lug
 
 import (

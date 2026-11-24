@@ -35,7 +35,7 @@ rets, err := lug.DoString(lug.New(), `return 1`)
 - Go version (`go version`):
 - OS and architecture:
 - How the script is loaded: `lug.DoString` / `lug.DoFile` / `lug.CompileFile` +
-  `Script.Run` / `load` inside Lua / inside a sandbox
+  `Script.Run` / `load` inside Lua
 
 ### Anything else
 

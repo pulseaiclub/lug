@@ -67,7 +67,7 @@ func (s *Script) Run(env *Env, args ...Value) ([]Value, error) {
 	return s.prog.Run(env, args...)
 }
 
-// Run1 executes the script and converts its first result to T.
+// RunScript1 Run1 executes the script and converts its first result to T.
 func RunScript1[T any](s *Script, env *Env, args ...Value) (T, error) {
 	var zero T
 	rets, err := s.Run(env, args...)
@@ -100,15 +100,4 @@ func DoFile(env *Env, path string) ([]Value, error) {
 		return nil, err
 	}
 	return s.Run(env)
-}
-
-// SandboxOptions re-exports the runtime's sandbox configuration, so host code
-// needs one import instead of two.
-type SandboxOptions = runtime.SandboxOptions
-
-// NewSandboxed returns an environment with only the capabilities named in opts.
-// Use one sandbox per script when running code from different authors: separate
-// globals, no filesystem, no os.execute, no load.
-func NewSandboxed(tag string, opts SandboxOptions) *Env {
-	return runtime.NewSandboxed(tag, opts)
 }

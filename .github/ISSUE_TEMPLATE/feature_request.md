@@ -24,7 +24,7 @@ Which of these is closest?
 
 - [ ] Lua 5.4 semantics that lug gets wrong or does not implement
 - [ ] A standard library function that is missing
-- [ ] The embedding API (`Bind`, `Expose`, `Compile`, sandbox options, ...)
+- [ ] The embedding API (`Bind`, `Expose`, `Compile`, ...)
 - [ ] The `lug` command
 - [ ] Performance
 

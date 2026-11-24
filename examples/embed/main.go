@@ -1,6 +1,6 @@
 // Command embed shows how to use Lua as a scripting language at run time:
 // scripts are read from a directory while the program runs, each one gets its
-// own sandboxed environment, and a failing script cannot take the host down.
+// own environment, and a failing script cannot take the host down.
 package main
 
 import (
@@ -32,12 +32,9 @@ func main() {
 	for _, path := range files {
 		name := strings.TrimSuffix(filepath.Base(path), ".lua")
 
-		// One sandbox per script: separate globals, no os.execute, no io, no
-		// load. print is routed to the host so the output is tagged.
-		env := lug.NewSandboxed(name, lug.SandboxOptions{
-			AllowPrint: true,
-			OnPrint:    func(tag, line string) { fmt.Printf("[%s] %s\n", tag, line) },
-		})
+		// Each script gets its own environment. The full standard library is
+		// available because this host embeds Lua directly in the Go process.
+		env := lug.New()
 		env.Set("name", lug.ValueOf(name))
 
 		// Compiling and running are two steps: parse once, run as often as

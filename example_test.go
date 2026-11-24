@@ -3,7 +3,6 @@ package lug_test
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/pulseaiclub/lug"
 )
@@ -100,30 +99,4 @@ func ExampleScript() {
 	fmt.Println()
 
 	// Output: 2 4 42
-}
-
-func ExampleNewSandboxed() {
-	// A sandbox starts with no capabilities. print is granted here and its
-	// output is routed to the host instead of the process's stdout.
-	var logged []string
-	env := lug.NewSandboxed("example", lug.SandboxOptions{
-		AllowPrint: true,
-		OnPrint:    func(tag, line string) { logged = append(logged, tag+": "+line) },
-	})
-
-	// os, io, load and require are absent, so this reports them as nil.
-	rets, err := lug.DoString(env, `return tostring(os), tostring(io), tostring(load)`)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(lug.Get[string](rets, 0), lug.Get[string](rets, 1), lug.Get[string](rets, 2))
-
-	if _, err := lug.DoString(env, `print("inside the sandbox")`); err != nil {
-		panic(err)
-	}
-	fmt.Println(strings.Join(logged, ", "))
-
-	// Output:
-	// nil nil nil
-	// example: inside the sandbox
 }

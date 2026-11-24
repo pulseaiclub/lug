@@ -11,8 +11,8 @@ the product.
   integer division, bitwise operators, `<const>` attributes.
 - **Typed Go interop** — bind any Go function, expose any Go value; fields and
   methods stay reachable from Lua. Reflection happens once at bind time.
-- **Sandboxing** — one environment per script, with `os`/`io`/`print` granted
-  explicitly and `os.execute`, `os.getenv`, `load` and `require` never.
+- **Embedding** — run Lua directly inside the Go process, with one environment
+  per script and explicit host APIs exposed through `Bind` and `Expose`.
 - **Zero dependencies** — standard library only.
 
 ```go
@@ -124,8 +124,8 @@ Supported `As[T]` / `Get[T]` types: `Value`, `float64`, `int64`, `int`, `string`
 may take any number of parameters of any types, and Go's type sets cannot express
 "any function signature".
 
-`example_test.go` holds runnable examples for `Bind`, `Expose`, `Script` and
-`NewSandboxed`; `go test` checks their output, so they cannot drift.
+`example_test.go` holds runnable examples for `Bind`, `Expose` and `Script`;
+`go test` checks their output, so they cannot drift.
 
 ## Loading scripts from Lua
 
@@ -139,26 +139,12 @@ print(loadfile("scripts/other.lua"))    -- compiles, does not run
 ```
 
 `examples/embed` is a complete plugin host: it walks a directory, gives every
-script its own sandbox, calls `on_load` / `on_tick` / `on_unload` hooks, and keeps
-a broken script from affecting the others.
+script its own environment, calls `on_load` / `on_tick` / `on_unload` hooks, and
+keeps a broken script from affecting the others.
 
-## Sandboxing
-
-```go
-env := lug.NewSandboxed("mod-name", lug.SandboxOptions{
-	AllowPrint: true,
-	OnPrint:    func(tag, line string) { fmt.Printf("[%s] %s\n", tag, line) },
-})
-```
-
-A sandbox starts with no capabilities: no `os`, no `io`, no `load`/`dofile`, no
-`require`/`debug`, no `print` unless asked for, and its own globals table.
-`SandboxOptions{OS: true}` exposes only `os.time`, `os.date`, `os.clock` and
-`os.difftime`; `IO: true` only `io.write`. `os.execute`, `os.remove`, `os.getenv`
-and `os.exit` are never available.
-
-The sandbox restricts capabilities, not resources: a script that loops forever
-cannot be interrupted. Use a separate process for genuinely untrusted code.
+The library runs inside the host process. Create one `lug.Env` per plugin when
+plugins need separate global state, and expose only the editor APIs each plugin
+should call with `Bind` and `Expose`.
 
 ## What is supported
 
@@ -203,14 +189,14 @@ Run them yourself: `go test ./internal/interp -bench . -run xxx`.
 
 ```
 lug.go                 public embedding API (Bind, Expose, ValueOf, CallErr, ...)
-script.go              Compile / CompileFile / DoString / DoFile, sandbox setup
+script.go              Compile / CompileFile / DoString / DoFile
 generic.go             As / Get / Run1 / Slice / TableOf / Userdata helpers
 internal/lexer         Lua 5.4 lexer
 internal/ast           surface AST
 internal/parser        recursive-descent parser with precedence climbing
 internal/interp        the interpreter: AST -> values
 runtime/               values, tables, closures, metatables, stdlib, coroutines
-examples/embed         run-time plugin host with per-script sandboxes
+examples/embed         run-time plugin host with per-script environments
 ```
 
 Only the root package, `runtime` and the `examples` are public API; everything
